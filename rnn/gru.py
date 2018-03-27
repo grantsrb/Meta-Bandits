@@ -47,7 +47,7 @@ class GRU(nn.Module):
         z = self.sigmoid(x.mm(self.W_x[0]) + old_h.mm(self.W_h[0]) + self.b[0])
         r = self.sigmoid(x.mm(self.W_x[1]) + old_h.mm(self.W_h[1]) + self.b[1])
         h = z*old_h + (1-z)*self.tanh(x.mm(self.W_x[2]) + (r*old_h).mm(self.W_h[2]) + self.b[2])
-        return (h,)
+        return h
 
     def check_grads(self):
         for p in list(self.parameters()):

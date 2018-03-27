@@ -1,6 +1,8 @@
 import torch
 from torch.autograd import Variable
+import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 import numpy as np
 
 
@@ -16,18 +18,27 @@ class Updater():
             t_obj = t_obj.cpu()
         return t_obj
 
-    def __init__(self, net, lr):
+    def __init__(self, net, lr, gamma=.99, lambda_=.96, val_coef=.5, entr_coef=.01, max_norm=.5):
         self.net = net
         self.optim = optim.Adam(self.net.parameters(), lr=lr)
+        self.gamma = gamma
+        self.lambda_ = lambda_
+        self.val_coef = val_coef
+        self.entr_coef = entr_coef
+        self.max_norm = max_norm
+        self.global_loss = 0
+        self.pi_loss = 0
+        self.val_loss = 0
+        self.entr = 0
+        self.info = {"Global":self.global_loss,"Pi":self.pi_loss,"Val":self.val_loss,"Entr":self.entr}
 
-    def calc_model_loss(self, data):
+    def calc_loss(self, data):
         """
         data - dict with keys:
                 "rewards" - ndarray of rewards collected in the rollout. 
                             shape (n_tsteps, n_envs, 1)
                 "values" - ndarray of value predictions collected in the rollout. 
-                            shape (n_tsteps+1, n_envs, 1)
-                "actions" - ndarray of one_hot encoded actions collected 
+                            shape (n_tsteps+1, n_envs, 1) "actions" - ndarray of one_hot encoded actions collected 
                             in the rollout. shape (n_tsteps, n_envs, n_bandits)
                 "net_inputs" - torch FloatTensor of the net inputs at each step 
                             in the rollout. shape (n_tsteps, n_envs, n_bandits)
@@ -46,17 +57,17 @@ class Updater():
         # Make Action Probs and Vals
         net_inputs = Variable(self.cuda_if(net_inputs))
         raw_pis = Variable(self.cuda_if(torch.zeros(actions.shape)))
-        vals = Variable(self.cuda_if(torch.zeros(values.shape)))
+        vals = Variable(self.cuda_if(torch.zeros(returns.shape)))
         for i in range(len(rewards)):
             inputs = net_inputs[i]
-            raw_prob, val = self.net.forward(ins)
+            raw_prob, val = self.net.forward(inputs)
             raw_pis[i] = raw_prob
             vals[i] = val
             
         # Policy Loss
         actions = Variable(self.cuda_if(torch.FloatTensor(actions)))
         log_probs = F.log_softmax(raw_pis, dim=-1)
-        log_pis = torch.sum(log_probs*actions, axis=-1)
+        log_pis = torch.sum(log_probs*actions, dim=-1)
         pi_loss = -(log_pis*advantages).mean()
 
         # Value Loss
@@ -69,14 +80,14 @@ class Updater():
         entropy = -self.entr_coef*entropy
 
         self.global_loss += pi_loss + val_loss - entropy
-        self.pi_loss += pi_loss
-        self.val_loss += val_loss
-        self.entr += entropy
+        self.pi_loss += pi_loss.data[0]
+        self.val_loss += val_loss.data[0]
+        self.entr += entropy.data[0]
 
     def calc_gradients(self):
         try:
             self.global_loss.backward()
-            self.stats = {"Global":self.global_loss,"Pi":self.pi_loss,"Val":self.val_loss,"Entr":self.entr}
+            self.info = {"Global":self.global_loss.data[0],"Pi":self.pi_loss,"Val":self.val_loss,"Entr":self.entr}
             self.global_loss = 0
             self.pi_loss = 0
             self.val_loss = 0
@@ -84,17 +95,17 @@ class Updater():
         except RuntimeError:
             print("Attempted backwards pass with no graph")
 
-    def update_model(self, calc_grads=True):
+    def update_model(self, calc_grad=True):
         """
         Calculates gradient and performs step of gradient descent.
         """
-        if calc_grads:
+        if calc_grad:
             self.calc_gradients()
         norm = nn.utils.clip_grad_norm(self.net.parameters(), self.max_norm)
         self.optim.step()
         self.optim.zero_grad()
 
-    def print_statistics(self):
+    def print_stats(self):
         print("\n".join([key+": "+str(round(val,8)) for key,val in self.info.items()]))
 
     def gae(self, rewards, values, gamma, lambda_):

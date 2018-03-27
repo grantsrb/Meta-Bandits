@@ -28,8 +28,8 @@ class Collector():
         self.net.train(mode=False)
         net_input = Variable(self.cuda_if(torch.zeros(len(self.envs),self.pi_space+1)))
         net_inputs = self.cuda_if(torch.zeros(self.n_tsteps,len(self.envs),self.pi_space+1))
-        net_inputs[0] = net_input.data
-        for i in range(1, self.n_tsteps+1):
+        for i in range(0, self.n_tsteps):
+            net_inputs[i] = net_input.data
             outputs,vals = self.net.forward(net_input)
             pis = self.softmax(self.cpu_if(outputs.data).numpy())
             actions = self.get_actions(pis)
@@ -38,7 +38,6 @@ class Collector():
             data['rewards'].append(rewards)
             data['values'].append(self.cpu_if(vals.data).numpy())
             net_input = self.get_net_input(actions, rewards)
-            net_inputs[i] = net_input
         
         outputs,vals = self.net.forward(net_input)
         data['values'].append(self.cpu_if(vals.data).numpy())
@@ -72,9 +71,9 @@ class Collector():
             rewards - ndarray of collected rewards. shape = (batch_size, 1)
         """
         rewards = []
-        for action,env in zip(actions,envs):
+        for action,env in zip(actions,self.envs):
             rewards.append(env.pull_lever(action))
-        return np.asarray(rewards, dtype=np.float32)[None]
+        return np.asarray(rewards, dtype=np.float32)[..., None]
 
     def get_net_input(self, actions, rewards):
         """

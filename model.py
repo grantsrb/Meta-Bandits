@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-import rnn.GRU as GRU
+from torch.autograd import Variable
+from rnn.gru import GRU
 
 class Model(nn.Module):
 
@@ -15,11 +16,10 @@ class Model(nn.Module):
         self.state_size = state_size
         self.batch_size = batch_size
 
-        self.bandits = nn.Parameter(torch.ones(n_bandits).float())
-        means = torch.zeros(state_size+n_bandits+1, n_bandits)
-        self.output = nn.Parameter(torch.normal(means=means, std=1/torch.sqrt(state_size)))
+        self.gru = GRU(x_size=n_bandits+1, state_size=state_size)
+        self.pi = nn.Linear(state_size, n_bandits)
+        self.val = nn.Linear(state_size, 1)
         self.state = self.reset_state(batch_size)
-        self.gru = GRU(x_size=n_bandits, state_size=state_size)
 
     def forward(self, last_data):
         """
@@ -27,9 +27,11 @@ class Model(nn.Module):
                     concatenated with the last reward. shape = (batch_size, n_bandits+1)
         """
         new_state = self.gru(last_data, Variable(self.state))
-        aprobs = self.output(new_state)
+        
+        pis = self.pi(new_state)
+        vals = self.val(new_state)
         self.state = new_state.data
-        return aprobs
+        return pis, vals
 
     def reset_state(self, batch_size=None):
         """
