@@ -1,0 +1,127 @@
+import torch
+from torch.autograd import Variable
+import torch.optim as optim
+import numpy as np
+
+
+class Updater():
+    
+    def cuda_if(self, t_obj):
+        if torch.cuda.is_available():
+            t_obj = t_obj.cuda()
+        return t_obj
+
+    def cpu_if(self, t_obj):
+        if torch.cuda.is_available():
+            t_obj = t_obj.cpu()
+        return t_obj
+
+    def __init__(self, net, lr):
+        self.net = net
+        self.optim = optim.Adam(self.net.parameters(), lr=lr)
+
+    def calc_model_loss(self, data):
+        """
+        data - dict with keys:
+                "rewards" - ndarray of rewards collected in the rollout. 
+                            shape (n_tsteps, n_envs, 1)
+                "values" - ndarray of value predictions collected in the rollout. 
+                            shape (n_tsteps+1, n_envs, 1)
+                "actions" - ndarray of one_hot encoded actions collected 
+                            in the rollout. shape (n_tsteps, n_envs, n_bandits)
+                "net_inputs" - torch FloatTensor of the net inputs at each step 
+                            in the rollout. shape (n_tsteps, n_envs, n_bandits)
+        """
+        
+        rewards = data['rewards']
+        actions = data['actions']
+        values = data['values']
+        net_inputs = data['net_inputs']
+
+        # Make Advantages
+        advantages = self.gae(rewards, values, self.gamma, self.lambda_)
+        returns = advantages + values[:-1]
+        advantages = Variable(self.cuda_if(torch.FloatTensor(advantages)))
+
+        # Make Action Probs and Vals
+        net_inputs = Variable(self.cuda_if(net_inputs))
+        raw_pis = Variable(self.cuda_if(torch.zeros(actions.shape)))
+        vals = Variable(self.cuda_if(torch.zeros(values.shape)))
+        for i in range(len(rewards)):
+            inputs = net_inputs[i]
+            raw_prob, val = self.net.forward(ins)
+            raw_pis[i] = raw_prob
+            vals[i] = val
+            
+        # Policy Loss
+        actions = Variable(self.cuda_if(torch.FloatTensor(actions)))
+        log_probs = F.log_softmax(raw_pis, dim=-1)
+        log_pis = torch.sum(log_probs*actions, axis=-1)
+        pi_loss = -(log_pis*advantages).mean()
+
+        # Value Loss
+        targets = Variable(self.cuda_if(torch.FloatTensor(returns)))
+        val_loss = self.val_coef*F.mse_loss(vals, targets)
+
+        # Entropy
+        probs = F.softmax(raw_pis, dim=-1)
+        entropy = torch.sum(probs*log_probs, dim=-1).mean()
+        entropy = -self.entr_coef*entropy
+
+        self.global_loss += pi_loss + val_loss - entropy
+        self.pi_loss += pi_loss
+        self.val_loss += val_loss
+        self.entr += entropy
+
+    def calc_gradients(self):
+        try:
+            self.global_loss.backward()
+            self.stats = {"Global":self.global_loss,"Pi":self.pi_loss,"Val":self.val_loss,"Entr":self.entr}
+            self.global_loss = 0
+            self.pi_loss = 0
+            self.val_loss = 0
+            self.entr = 0
+        except RuntimeError:
+            print("Attempted backwards pass with no graph")
+
+    def update_model(self, calc_grads=True):
+        """
+        Calculates gradient and performs step of gradient descent.
+        """
+        if calc_grads:
+            self.calc_gradients()
+        norm = nn.utils.clip_grad_norm(self.net.parameters(), self.max_norm)
+        self.optim.step()
+        self.optim.zero_grad()
+
+    def print_statistics(self):
+        print("\n".join([key+": "+str(round(val,8)) for key,val in self.info.items()]))
+
+    def gae(self, rewards, values, gamma, lambda_):
+        """
+        rewards - ndarray of rewards collected in the rollout. 
+                    shape (n_tsteps, n_envs, 1)
+        values - ndarray of value predictions collected in the rollout. 
+                            shape (n_tsteps+1, n_envs, 1)
+        gamma - discount factor between 0 and 1
+        lambda_ - gae moving avg factor between 0 and 1
+        """
+        advs = rewards + gamma*values[1:] - values[:-1]
+        return self.discount(advs, gamma*lambda_)
+         
+    def discount(self, rewards, disc_factor):
+        """
+        rewards - ndarray of rewards to be discounted, shape = (n_tsteps, n_envs, 1)
+        disc_factor - decay constant float between 0 and 1
+
+        returns:
+            disc_rews - discounted rewards of shape (n_tsteps, n_envs, 1)
+        """
+        disc_rews = np.zeros_like(rewards)
+        running_sum = np.zeros(rewards.shape[1:])
+        for i in reversed(range(len(rewards))):
+            running_sum = rewards[i] + disc_factor*running_sum
+            disc_rews[i] = running_sum.copy()
+        return disc_rews
+
+
