@@ -2,7 +2,7 @@ import torch
 from torch.autograd import Variable
 import numpy as np
 from model import Model
-import bandits
+import bandit
 from collector import Collector
 from updater import Updater
 
@@ -12,7 +12,7 @@ n_envs = 100
 n_tsteps = 100
 n_bandits = 2
 emb_size = 100
-total_steps = 1000000
+total_steps = 100000000
 lr = 1e-3
 gamma = 0.99
 lambda_ = 0.96
@@ -23,7 +23,7 @@ max_norm = .5
 # Make bandits
 envs = []
 for i in range(n_envs):
-    envs.append(bandits.Bandits(n_bandits))
+    envs.append(bandit.Bandit(n_bandits))
 
 # Make Model
 net = Model(n_bandits, emb_size, batch_size=n_envs)
