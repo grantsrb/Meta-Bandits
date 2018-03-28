@@ -1,12 +1,13 @@
 import numpy as np
 
-class Bandits():
+class Bandit():
     def __init__(self, n_bandits=2, probs=None):
-        self.n_bandits = n_bandits
         if probs is None:
             probs = np.random.random(n_bandits)*2.0
-        self.bandits = self.softmax(np.array(probs,dtype=np.float32))
+            probs = self.softmax(np.array(probs,dtype=np.float32))
+        self.bandits = probs
         self.n_bandits = len(self.bandits)
+        print("Bandits:", self.bandits)
 
     def pull_lever(self, one_hot_bandit):
         """
