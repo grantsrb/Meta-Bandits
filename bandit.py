@@ -7,7 +7,6 @@ class Bandit():
             probs = self.softmax(np.array(probs,dtype=np.float32))
         self.bandits = probs
         self.n_bandits = len(self.bandits)
-        print("Bandits:", self.bandits)
 
     def pull_lever(self, one_hot_bandit):
         """
