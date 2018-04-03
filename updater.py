@@ -18,7 +18,7 @@ class Updater():
             t_obj = t_obj.cpu()
         return t_obj
 
-    def __init__(self, net, lr, gamma=.99, lambda_=.96, val_coef=.5, entr_coef=.01, max_norm=.5):
+    def __init__(self, net, lr, gamma=.99, lambda_=.96, val_coef=.5, entr_coef=.01, max_norm=.5, norm_advs=False):
         self.net = net
         self.optim = optim.Adam(self.net.parameters(), lr=lr)
         self.gamma = gamma
@@ -26,6 +26,7 @@ class Updater():
         self.val_coef = val_coef
         self.entr_coef = entr_coef
         self.max_norm = max_norm
+        self.norm_advs = norm_advs
         self.global_loss = 0
         self.pi_loss = 0
         self.val_loss = 0
@@ -36,9 +37,10 @@ class Updater():
         """
         data - dict with keys:
                 "rewards" - ndarray of rewards collected in the rollout. 
-                            shape (n_tsteps, n_envs, 1)
+                            shape (n_tsteps, n_envs)
                 "values" - ndarray of value predictions collected in the rollout. 
-                            shape (n_tsteps+1, n_envs, 1) "actions" - ndarray of one_hot encoded actions collected 
+                            shape (n_tsteps+1, n_envs) 
+                "actions" - ndarray of one_hot encoded actions collected 
                             in the rollout. shape (n_tsteps, n_envs, n_bandits)
                 "net_inputs" - torch FloatTensor of the net inputs at each step 
                             in the rollout. shape (n_tsteps, n_envs, n_bandits)
@@ -52,12 +54,16 @@ class Updater():
         # Make Advantages
         advantages = self.gae(rewards, values, self.gamma, self.lambda_)
         returns = advantages + values[:-1]
+        if self.norm_advs:
+            advantages = (advantages - np.mean(advantages))/(np.std(advantages)+1e-6)
         advantages = Variable(self.cuda_if(torch.FloatTensor(advantages)))
 
         # Make Action Probs and Vals
         net_inputs = Variable(self.cuda_if(net_inputs))
         raw_pis = Variable(self.cuda_if(torch.zeros(actions.shape)))
-        vals = Variable(self.cuda_if(torch.zeros(returns.shape)))
+        vals = Variable(self.cuda_if(torch.zeros(rewards.shape)))
+        self.net.reset_state(actions.shape[1])
+        self.net.train(mode=True)
         for i in range(len(rewards)):
             inputs = net_inputs[i]
             raw_prob, val = self.net.forward(inputs)
@@ -68,16 +74,19 @@ class Updater():
         actions = Variable(self.cuda_if(torch.FloatTensor(actions)))
         log_probs = F.log_softmax(raw_pis, dim=-1)
         log_pis = torch.sum(log_probs*actions, dim=-1)
-        pi_loss = -(log_pis*advantages).mean()
+        pi_loss = log_pis*advantages.squeeze()
+        pi_loss = -(pi_loss).mean()
 
         # Value Loss
         targets = Variable(self.cuda_if(torch.FloatTensor(returns)))
-        val_loss = self.val_coef*F.mse_loss(vals, targets)
+        val_loss = self.val_coef*F.mse_loss(vals.squeeze(), targets.squeeze())
+        #val_loss = Variable(torch.zeros(1))
 
         # Entropy
         probs = F.softmax(raw_pis, dim=-1)
         entropy = torch.sum(probs*log_probs, dim=-1).mean()
         entropy = -self.entr_coef*entropy
+        #entropy = Variable(torch.zeros(1))
 
         self.global_loss += pi_loss + val_loss - entropy
         self.pi_loss += pi_loss.data[0]
@@ -101,7 +110,7 @@ class Updater():
         """
         if calc_grad:
             self.calc_gradients()
-        norm = nn.utils.clip_grad_norm(self.net.parameters(), self.max_norm)
+        self.norm = nn.utils.clip_grad_norm(self.net.parameters(), self.max_norm)
         self.optim.step()
         self.optim.zero_grad()
 
@@ -110,10 +119,10 @@ class Updater():
 
     def gae(self, rewards, values, gamma, lambda_):
         """
-        rewards - ndarray of rewards collected in the rollout. 
-                    shape (n_tsteps, n_envs, 1)
+        rewards - ndarray of rewards collected in the rollout. Rewards are assumed to 
+                    have included the bootstrapped value. shape (n_tsteps, n_envs)
         values - ndarray of value predictions collected in the rollout. 
-                            shape (n_tsteps+1, n_envs, 1)
+                   shape (n_tsteps+1, n_envs)
         gamma - discount factor between 0 and 1
         lambda_ - gae moving avg factor between 0 and 1
         """
@@ -122,11 +131,11 @@ class Updater():
          
     def discount(self, rewards, disc_factor):
         """
-        rewards - ndarray of rewards to be discounted, shape = (n_tsteps, n_envs, 1)
+        rewards - ndarray of rewards to be discounted, shape = (n_tsteps, n_envs)
         disc_factor - decay constant float between 0 and 1
 
         returns:
-            disc_rews - discounted rewards of shape (n_tsteps, n_envs, 1)
+            disc_rews - discounted rewards of shape (n_tsteps, n_envs)
         """
         disc_rews = np.zeros_like(rewards)
         running_sum = np.zeros(rewards.shape[1:])
