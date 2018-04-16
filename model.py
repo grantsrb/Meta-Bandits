@@ -19,18 +19,20 @@ class Model(nn.Module):
         self.gru = GRU(x_size=n_bandits+1, state_size=state_size)
         self.pi = nn.Linear(state_size, n_bandits)
         self.val = nn.Linear(state_size, 1)
-        self.state = self.reset_state(batch_size)
+        self.scale_vals = nn.Parameter(torch.ones(1))
+        self.state_vec = self.reset_state(batch_size)
 
     def forward(self, last_data):
         """
         last_data - Variable torch FloatTensor of the last action (one hot encoded) 
                     concatenated with the last reward. shape = (batch_size, n_bandits+1)
         """
-        new_state = self.gru(last_data, Variable(self.state))
+        new_state = self.gru(last_data, Variable(self.state_vec))
         
         pis = self.pi(new_state)
         vals = self.val(new_state)
-        self.state = new_state.data
+        vals = self.scale_vals * vals
+        self.state_vec = new_state.data
         return pis, vals
 
     def reset_state(self, batch_size=None):
@@ -38,6 +40,11 @@ class Model(nn.Module):
         Clears the state and makes a new one of shape (length, self.state_size)
         """
         if batch_size is not None: self.batch_size = batch_size
-        self.state = torch.zeros(self.batch_size, self.state_size)
-        return self.cuda_if(self.state)
+        self.state_vec = self.cuda_if(torch.zeros(self.batch_size, self.state_size))
+        return self.state_vec
+
+    def req_grads(self, state):
+        for p in self.parameters():
+            p.requires_grad=state
+        
 
