@@ -18,7 +18,7 @@ class Updater():
             t_obj = t_obj.cpu()
         return t_obj
 
-    def __init__(self, net, lr, gamma=.99, lambda_=.96, val_coef=.5, entr_coef=.01, max_norm=.5, norm_advs=False):
+    def __init__(self, net, lr, gamma=.995, lambda_=.95, val_coef=.5, entr_coef=.01, max_norm=.5, norm_advs=False, bootstrap=True):
         self.net = net
         self.optim = optim.Adam(self.net.parameters(), lr=lr)
         self.gamma = gamma
@@ -27,6 +27,7 @@ class Updater():
         self.entr_coef = entr_coef
         self.max_norm = max_norm
         self.norm_advs = norm_advs
+        self.bootstrap = bootstrap
         self.global_loss = 0
         self.pi_loss = 0
         self.val_loss = 0
@@ -53,23 +54,26 @@ class Updater():
 
         # Make Advantages
         advantages = self.gae(rewards, values, self.gamma, self.lambda_)
+        #returns = self.discount(rewards, self.gamma)
         returns = advantages + values[:-1]
         if self.norm_advs:
-            advantages = (advantages - np.mean(advantages))/(np.std(advantages)+1e-6)
+            advantages = (advantages - np.mean(advantages))
+            advantages = advantages/(np.max(advantages)+1e-6)
         advantages = Variable(self.cuda_if(torch.FloatTensor(advantages)))
 
         # Make Action Probs and Vals
         net_inputs = Variable(self.cuda_if(net_inputs))
-        raw_pis = Variable(self.cuda_if(torch.zeros(actions.shape)))
-        vals = Variable(self.cuda_if(torch.zeros(rewards.shape)))
+        raw_pis = Variable(self.cuda_if(torch.zeros(actions.shape))) # Storage variable for efficiency
+        vals = Variable(self.cuda_if(torch.zeros(rewards.shape))) # Storage variable for efficiency
         self.net.reset_state(actions.shape[1])
         self.net.train(mode=True)
+        self.net.req_grads(True)
         for i in range(len(rewards)):
             inputs = net_inputs[i]
             raw_prob, val = self.net.forward(inputs)
             raw_pis[i] = raw_prob
             vals[i] = val
-            
+
         # Policy Loss
         actions = Variable(self.cuda_if(torch.FloatTensor(actions)))
         log_probs = F.log_softmax(raw_pis, dim=-1)
@@ -86,9 +90,9 @@ class Updater():
         probs = F.softmax(raw_pis, dim=-1)
         entropy = torch.sum(probs*log_probs, dim=-1).mean()
         entropy = -self.entr_coef*entropy
-        #entropy = Variable(torch.zeros(1))
 
         self.global_loss += pi_loss + val_loss - entropy
+        #self.global_loss += pi_loss - entropy
         self.pi_loss += pi_loss.data[0]
         self.val_loss += val_loss.data[0]
         self.entr += entropy.data[0]
