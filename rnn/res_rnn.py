@@ -26,9 +26,6 @@ Where W_h and W_x are trainable weight matrices. Note that concatenate(a, b).mm(
 
 class ResRNN(nn.Module):
 
-    if torch.cuda.is_available():
-        torch.FloatTensor = torch.cuda.FloatTensor
-
     def __init__(self, x_size=256, state_size=256, layer_norm=False):
         super(ResRNN, self).__init__()
 

@@ -43,7 +43,6 @@ class GRU(nn.Module):
         old_h - running state of GRU. FloatTensor Variable with shape (batch_size, state_size)
         x - New data coming into GRU. FloatTensor Variable with shape (batch_size, state_size)
         """
-
         z = self.sigmoid(x.mm(self.W_x[0]) + old_h.mm(self.W_h[0]) + self.b[0])
         r = self.sigmoid(x.mm(self.W_x[1]) + old_h.mm(self.W_h[1]) + self.b[1])
         h = z*old_h + (1-z)*self.tanh(x.mm(self.W_x[2]) + (r*old_h).mm(self.W_h[2]) + self.b[2])
