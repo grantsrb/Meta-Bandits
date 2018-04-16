@@ -6,43 +6,45 @@ import bandit
 
 class Collector():
 
-    def cpu_if(self, t_obj):
-        if torch.cuda.is_available():
-            t_obj = t_obj.cpu()
-        return t_obj
-
     def cuda_if(self, t_obj):
         if torch.cuda.is_available():
             t_obj = t_obj.cuda()
         return t_obj
 
-    def __init__(self, net, n_envs, n_bandits):
+    def __init__(self, net, n_envs, n_bandits, bootstrap=True):
         self.net = net # PyTorch Module
         self.pi_space = n_bandits
         self.n_envs = n_envs
         self.softmax = bandit.Bandit().softmax
+        self.bootstrap = bootstrap
 
     def rollout(self, n_tsteps):
         self.envs = self.new_envs() # Vector of bandit envs
         data = {'actions':[], 'sparse_actions':[], 'rewards':[], 'values':[]}
         self.net.reset_state(len(self.envs))
         self.net.train(mode=False)
+        self.net.req_grads(False)
         net_input = Variable(self.cuda_if(torch.zeros(len(self.envs),self.pi_space+1)))
         net_inputs = self.cuda_if(torch.zeros(n_tsteps,len(self.envs),self.pi_space+1))
         for i in range(0, n_tsteps):
             net_inputs[i] = net_input.data
-            outputs,vals = self.net.forward(net_input)
-            pis = self.softmax(self.cpu_if(outputs.data).numpy())
+            outputs, vals = self.net.forward(net_input)
+            pis = self.softmax(outputs.data.cpu().numpy())
             actions = self.get_actions(pis)
             rewards = self.get_rewards(actions)
             data['sparse_actions'].append(np.argmax(actions, axis=-1))
             data['actions'].append(actions)
             data['rewards'].append(rewards)
-            data['values'].append(self.cpu_if(vals.data.squeeze()).numpy())
+            vals = vals.data.squeeze().cpu()
+            data['values'].append(vals.numpy())
             net_input = self.get_net_input(actions, rewards)
         
-        outputs, vals = self.net.forward(net_input)
-        data['values'].append(self.cpu_if(vals.data.squeeze()).numpy())
+        if self.bootstrap:
+            outputs, vals = self.net.forward(net_input)
+            vals = vals.data.squeeze().cpu()
+            data['values'].append(vals.numpy())
+        else:
+            data['values'].append(np.zeros(vals.shape))
         for key in data.keys():
             data[key] = np.asarray(data[key], dtype=np.float32)
         data['rewards'] = data['rewards'].squeeze()
@@ -56,7 +58,7 @@ class Collector():
         envs = []
         for i in range(self.n_envs):
             rand = np.random.random()
-            probs = [.1,.9] if rand <= 0.5 else [.9,.1]
+            probs = [.05,.95] if rand <= 0.5 else [.95,0.05]
             envs.append(bandit.Bandit(probs=probs))
         return envs
 
