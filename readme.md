@@ -23,19 +23,24 @@ The following figures were created using a probability of 1.0 for the cup of cho
 ### Training 
 One important aspect of this experiment is that it should be highly improbable to get 100% of the possible rewards. The maximum achievable reward accumulation should be 97.5% of the possible rewards, given 20 time steps in a trial and a 100% chance of the reward being under the same cup throughout the duration of a single trial. The 97.5% is because no information is given as to which cup holds the reward in the first time step. Following the first time step, the location of the reward is known, and as such, the agent can capitalize on the known cup. Keeping this in mind, we expect the average reward for each time step to approach 0.975 given that a reward of 0 or 1 is available at each time step. See **Figure 1**. 
 
-![Average Reward](./readme_figs/Avg\ Reward.png)
+![Average Reward](./readme_figs/avg_rew.png)
+
 **Figure 1.** The moving average of the reward at each timestep collected over the past 100 timesteps during training.
 
 ![Global Loss](./readme_figs/Global.png)
+
 **Figure 2.** Global loss includes the actor, critic, and entropy terms of the A2C loss function.
 
 ![Actor Loss](./readme_figs/Pi.png)
+
 **Figure 3.** Policy gradient loss.
 
 ![Critic Loss](./readme_figs/Val.png)
+
 **Figure 4.** Critic loss (a.k.a. Value function loss).
 
 ![Entropy](./readme_figs/Entr.png)
+
 **Figure 5.** Entropy
 
 
@@ -43,4 +48,5 @@ One important aspect of this experiment is that it should be highly improbable t
 The evaluation stage consisted of running the trained RNN without changing the parameters of the network. The evaluation was performed on 100 trials, each with 20 time steps. We expect to see close to a 50% expected reward at the first time step followed by 100% expected reward.
 
 ![Average over 100 trials](./readme_figs/AvgTrialRew.png)
+
 **Figure 6.** The reward collected at each timestep averaged over 100 trials. 
