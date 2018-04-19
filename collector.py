@@ -11,9 +11,10 @@ class Collector():
             t_obj = t_obj.cuda()
         return t_obj
 
-    def __init__(self, net, n_envs, n_bandits, bootstrap=True):
+    def __init__(self, net, n_envs, n_bandits, bandit_prob, bootstrap=True):
         self.net = net # PyTorch Module
         self.pi_space = n_bandits
+        self.prob = bandit_prob
         self.n_envs = n_envs
         self.softmax = bandit.Bandit().softmax
         self.bootstrap = bootstrap
@@ -58,7 +59,7 @@ class Collector():
         envs = []
         for i in range(self.n_envs):
             rand = np.random.random()
-            probs = [.05,.95] if rand <= 0.5 else [.95,0.05]
+            probs = [self.prob, 1-self.prob] if rand <= 0.5 else [1-self.prob, self.prob]
             envs.append(bandit.Bandit(probs=probs))
         return envs
 

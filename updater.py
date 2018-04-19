@@ -147,5 +147,8 @@ class Updater():
             running_sum = rewards[i] + disc_factor*running_sum
             disc_rews[i] = running_sum.copy()
         return disc_rews
-
+    
+    def save_model(self, save_file):
+        torch.save(self.net.state_dict(), save_file+"_net.p")
+        torch.save(self.optim.state_dict(), save_file+"_optim.p")
 
