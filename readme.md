@@ -26,22 +26,27 @@ One important aspect of this experiment is that it should be highly improbable t
 ![Average Reward](./readme_figs/avg_rew.png)
 
 **Figure 1.** The moving average of the reward at each timestep collected over the past 100 timesteps during training.
+-----------------------------
 
 ![Global Loss](./readme_figs/Global.png)
 
 **Figure 2.** Global loss includes the actor, critic, and entropy terms of the A2C loss function.
+----------------------------
 
 ![Actor Loss](./readme_figs/Pi.png)
 
 **Figure 3.** Policy gradient loss.
+----------------------------
 
 ![Critic Loss](./readme_figs/Val.png)
 
 **Figure 4.** Critic loss (a.k.a. Value function loss).
+----------------------------
 
 ![Entropy](./readme_figs/Entr.png)
 
 **Figure 5.** Entropy
+----------------------------
 
 
 ## Evaluation
@@ -50,3 +55,4 @@ The evaluation stage consisted of running the trained RNN without changing the p
 ![Average over 100 trials](./readme_figs/AvgTrialRew.png)
 
 **Figure 6.** The reward collected at each timestep averaged over 100 trials. 
+----------------------------
